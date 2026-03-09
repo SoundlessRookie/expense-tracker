@@ -1,0 +1,253 @@
+import React, { useState, useMemo } from 'react';
+import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns';
+import { motion, AnimatePresence } from 'motion/react';
+import { Transaction, TransactionType, Budget } from './types';
+import { storage } from './utils/storage';
+import { useTransactions, useCategories, useBudgets, useDarkMode } from './hooks';
+import { Sidebar } from './components/Sidebar';
+import { Header } from './components/Header';
+import { Dashboard } from './components/Dashboard';
+import { TransactionList } from './components/TransactionList';
+import { BudgetManager } from './components/BudgetManager';
+import { Settings } from './components/Settings';
+import { TransactionModal } from './components/TransactionModal';
+
+export default function App() {
+  // State
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'settings'>('dashboard');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+
+  // Custom hooks
+  const { transactions, saveTransaction, deleteTransaction, setTransactions } = useTransactions();
+  const { categories, setCategories } = useCategories();
+  const { budgets, setBudgets, addBudget, updateBudget } = useBudgets();
+  const { isDarkMode, toggleDarkMode } = useDarkMode();
+
+  // Filtered transactions based on month, search, and type
+  const filteredTransactions = useMemo(() => {
+    const start = startOfMonth(currentMonth);
+    const end = endOfMonth(currentMonth);
+
+    return transactions
+      .filter(t => {
+        const date = parseISO(t.date);
+        const matchesMonth = isWithinInterval(date, { start, end });
+        const matchesSearch =
+          t.note.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          categories.find(c => c.id === t.categoryId)?.name.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesType = filterType === 'all' || t.type === filterType;
+
+        return matchesMonth && matchesSearch && matchesType;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, currentMonth, searchQuery, filterType, categories]);
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    const income = filteredTransactions
+      .filter(t => t.type === 'income')
+      .reduce((acc, t) => acc + t.amount, 0);
+    const expense = filteredTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((acc, t) => acc + t.amount, 0);
+    return { income, expense, balance: income - expense };
+  }, [filteredTransactions]);
+
+  // Prepare chart data
+  const chartData = useMemo(() => {
+    const data: Record<string, { name: string; value: number; color: string }> = {};
+    filteredTransactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const cat = categories.find(c => c.id === t.categoryId);
+        if (cat) {
+          if (!data[cat.id]) {
+            data[cat.id] = { name: cat.name, value: 0, color: cat.color };
+          }
+          data[cat.id].value += t.amount;
+        }
+      });
+    return Object.values(data);
+  }, [filteredTransactions, categories]);
+
+  // Handlers
+  const handleSaveTransaction = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    const amount = Number(formData.get('amount'));
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    const newTransaction: Transaction = {
+      id: editingTransaction?.id || crypto.randomUUID(),
+      amount,
+      type: formData.get('type') as TransactionType,
+      categoryId: formData.get('categoryId') as string,
+      date: formData.get('date') as string,
+      note: formData.get('note') as string || '',
+    };
+
+    saveTransaction(newTransaction, !!editingTransaction);
+    setIsModalOpen(false);
+    setEditingTransaction(null);
+
+    // Show notification if permission granted
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Transaction Saved', {
+        body: `${newTransaction.type === 'income' ? '+' : '-'}$${newTransaction.amount} recorded.`,
+      });
+    }
+  };
+
+  const handleSaveBudget = (categoryId: string, amount: number) => {
+    const currentMonthStr = format(currentMonth, 'yyyy-MM');
+    
+    // Check if budget already exists for this category and month
+    const existingBudget = budgets.find(
+      b => b.categoryId === categoryId && b.period === currentMonthStr
+    );
+
+    if (existingBudget) {
+      // Update existing budget
+      updateBudget({
+        ...existingBudget,
+        amount
+      });
+    } else {
+      // Create new budget
+      addBudget({
+        categoryId,
+        amount,
+        period: currentMonthStr
+      });
+    }
+
+    // Show success notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const categoryName = categories.find(c => c.id === categoryId)?.name || 'Category';
+      new Notification('Budget Saved', {
+        body: `Budget set to $${amount} for ${categoryName}`,
+      });
+    }
+  };
+
+  const handleExport = () => {
+    storage.exportData();
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && (await storage.importData(file))) {
+      setTransactions(storage.getTransactions());
+      setCategories(storage.getCategories());
+      setBudgets(storage.getBudgets());
+      alert('Data restored successfully!');
+    } else {
+      alert('Failed to import data. Please check the file format.');
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window) {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        alert('Notifications enabled!');
+      }
+    }
+  };
+
+  const handleAddTransaction = () => {
+    setEditingTransaction(null);
+    setIsModalOpen(true);
+  };
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setIsModalOpen(true);
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col md:flex-row">
+      {/* Sidebar */}
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Main Content */}
+      <main className="flex-1 p-6 md:p-10 overflow-y-auto">
+        <Header
+          activeTab={activeTab}
+          currentMonth={currentMonth}
+          onMonthChange={setCurrentMonth}
+        />
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {activeTab === 'dashboard' && (
+              <Dashboard
+                stats={stats}
+                chartData={chartData}
+                filteredTransactions={filteredTransactions}
+                categories={categories}
+              />
+            )}
+            {activeTab === 'transactions' && (
+              <TransactionList
+                filteredTransactions={filteredTransactions}
+                categories={categories}
+                searchQuery={searchQuery}
+                filterType={filterType}
+                onSearchChange={setSearchQuery}
+                onFilterChange={setFilterType}
+                onAddClick={handleAddTransaction}
+                onEditClick={handleEditTransaction}
+                onDeleteClick={deleteTransaction}
+              />
+            )}
+            {activeTab === 'budgets' && (
+              <BudgetManager
+                categories={categories}
+                budgets={budgets}
+                filteredTransactions={filteredTransactions}
+                currentMonth={currentMonth}
+                onSaveBudget={handleSaveBudget}
+              />
+            )}
+            {activeTab === 'settings' && (
+              <Settings
+                isDarkMode={isDarkMode}
+                onToggleDarkMode={toggleDarkMode}
+                onExport={handleExport}
+                onImport={handleImport}
+                onRequestNotification={requestNotificationPermission}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      {/* Transaction Modal */}
+      <TransactionModal
+        isOpen={isModalOpen}
+        editingTransaction={editingTransaction}
+        categories={categories}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingTransaction(null);
+        }}
+        onSave={handleSaveTransaction}
+      />
+    </div>
+  );
+}
