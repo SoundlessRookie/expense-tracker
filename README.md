@@ -1,4 +1,4 @@
-# SpendWise - Smart Expense Tracker
+# Wally - expense tracker
 
 A modern, feature-rich expense tracking application built with React, TypeScript, and Tailwind CSS.
 
@@ -51,17 +51,3 @@ npm run build
 ```
 
 The built files will be in the `dist` directory.
-
-
-## Data Storage
-
-All data is stored locally in your browser's localStorage. This means:
-- ✅ Complete privacy - your data never leaves your device
-- ✅ Works offline
-- ⚠️ Clearing browser data will delete your transactions
-- 💡 Use the backup/restore feature to save your data
-
-## License
-
-MIT License - feel free to use this project for personal or commercial purposes.
-
