@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Budget } from './types';
@@ -11,8 +11,53 @@ import { TransactionList } from './components/TransactionList';
 import { BudgetManager } from './components/BudgetManager';
 import { Settings } from './components/Settings';
 import { TransactionModal } from './components/TransactionModal';
+import { AuthPage } from './components/AuthPage';
+
+interface User {
+  name: string;
+  email: string;
+}
 
 export default function App() {
+  // Auth state
+  const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Check for existing session on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('wally_user');
+    if (saved) {
+      try {
+        setUser(JSON.parse(saved));
+      } catch {
+        localStorage.removeItem('wally_user');
+      }
+    }
+    setAuthChecked(true);
+  }, []);
+
+  const handleAuthSuccess = (loggedInUser: User) => {
+    setUser(loggedInUser);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('wally_user');
+    setUser(null);
+  };
+
+  // Don't render until we've checked auth
+  if (!authChecked) return null;
+
+  // Show auth page if not logged in
+  if (!user) {
+    return <AuthPage onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  return <AppContent user={user} onLogout={handleLogout} />;
+}
+
+// Main app content (only shown when authenticated)
+function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
   // State
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'settings'>('dashboard');
@@ -98,7 +143,6 @@ export default function App() {
     setIsModalOpen(false);
     setEditingTransaction(null);
 
-    // Show notification if permission granted
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('Transaction Saved', {
         body: `${newTransaction.type === 'income' ? '+' : '-'}$${newTransaction.amount} recorded.`,
@@ -109,27 +153,16 @@ export default function App() {
   const handleSaveBudget = (categoryId: string, amount: number) => {
     const currentMonthStr = format(currentMonth, 'yyyy-MM');
     
-    // Check if budget already exists for this category and month
     const existingBudget = budgets.find(
       b => b.categoryId === categoryId && b.period === currentMonthStr
     );
 
     if (existingBudget) {
-      // Update existing budget
-      updateBudget({
-        ...existingBudget,
-        amount
-      });
+      updateBudget({ ...existingBudget, amount });
     } else {
-      // Create new budget
-      addBudget({
-        categoryId,
-        amount,
-        period: currentMonthStr
-      });
+      addBudget({ categoryId, amount, period: currentMonthStr });
     }
 
-    // Show success notification
     if ('Notification' in window && Notification.permission === 'granted') {
       const categoryName = categories.find(c => c.id === categoryId)?.name || 'Category';
       new Notification('Budget Saved', {
@@ -176,7 +209,12 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
       {/* Sidebar */}
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        user={user}
+        onLogout={onLogout}
+      />
 
       {/* Main Content */}
       <main className="flex-1 p-6 md:p-10 overflow-y-auto">
