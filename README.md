@@ -29,7 +29,7 @@ A modern, feature-rich expense tracking application built with React, TypeScript
 ## Prerequisites
  
 - **Node.js** v18 or higher
-- **Python** 3.10 or higher
+- **Python** 3.12 or higher
 - **PostgreSQL** installed and running
  
 ### 1. Clone the Repo
