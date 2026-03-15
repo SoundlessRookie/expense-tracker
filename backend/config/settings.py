@@ -85,8 +85,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'expense_tracker'),
+        'USER': os.environ.get('DB_USER', 'expense_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'expense_pass'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
@@ -148,8 +152,8 @@ REST_FRAMEWORK = {
 # CORS Configuration
 # ──────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',    # Vite dev server
-    'http://127.0.0.1:5173',
+    'http://localhost:3000',    # Vite dev server
+    'http://127.0.0.1:3000',
 ]
 
 CORS_ALLOW_CREDENTIALS = True

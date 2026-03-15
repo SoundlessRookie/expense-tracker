@@ -1,47 +1,97 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Transaction, Category, Budget } from '../types';
-import { storage } from '../utils/storage';
+import * as api from '../utils/api';
 
 /**
- * Hook for managing transactions
+ * Hook for managing transactions.
+ *
+ * Key difference from the localStorage version:
+ * - Data is fetched from the API, not read from localStorage
+ * - CRUD operations call the API, which updates the database
+ * - Filters (month, type, search) are sent to the server
+ *   so the database does the filtering, not the frontend
  */
 export function useTransactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Fetch transactions from the API
+  // Call this whenever filters change or after a mutation
+  const fetchTransactions = useCallback(
+    async (filters: { month?: string; type?: string; search?: string } = {}) => {
+      try {
+        setLoading(true);
+        const data = await api.getTransactions(filters);
+        setTransactions(data);
+      } catch (error) {
+        console.error('Failed to fetch transactions:', error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  // Load transactions on mount
   useEffect(() => {
-    setTransactions(storage.getTransactions());
-  }, []);
+    fetchTransactions();
+  }, [fetchTransactions]);
 
-  const addTransaction = (transaction: Transaction) => {
-    const updated = [...transactions, transaction];
-    setTransactions(updated);
-    storage.saveTransactions(updated);
+  const addTransaction = async (transaction: Omit<Transaction, 'id'>) => {
+    try {
+      const created = await api.createTransaction(transaction);
+      // Add the new transaction to local state so the UI updates immediately
+      setTransactions(prev => [created, ...prev]);
+      return created;
+    } catch (error) {
+      console.error('Failed to create transaction:', error);
+      throw error;
+    }
   };
 
-  const updateTransaction = (transaction: Transaction) => {
-    const updated = transactions.map(t => 
-      t.id === transaction.id ? transaction : t
-    );
-    setTransactions(updated);
-    storage.saveTransactions(updated);
+  const updateTransaction = async (transaction: Transaction) => {
+    try {
+      const updated = await api.updateTransaction(transaction);
+      setTransactions(prev =>
+        prev.map(t => (t.id === updated.id ? updated : t))
+      );
+      return updated;
+    } catch (error) {
+      console.error('Failed to update transaction:', error);
+      throw error;
+    }
   };
 
-  const deleteTransaction = (id: string) => {
-    const updated = transactions.filter(t => t.id !== id);
-    setTransactions(updated);
-    storage.saveTransactions(updated);
-  };
+  const deleteTransaction = async (id: string) => {
+  try {
+    await api.deleteTransaction(id);
+    console.log('Before filter:', transactions.length);
+    setTransactions(prev => {
+      const filtered = prev.filter(t => t.id !== id);
+      console.log('After filter:', filtered.length);
+      return filtered;
+    });
+  } catch (error) {
+    console.error('Failed to delete transaction:', error);
+    throw error;
+  }
+};
 
-  const saveTransaction = (transaction: Transaction, isEditing: boolean) => {
+  const saveTransaction = async (
+    transaction: Transaction | Omit<Transaction, 'id'>,
+    isEditing: boolean
+  ) => {
     if (isEditing) {
-      updateTransaction(transaction);
+      return updateTransaction(transaction as Transaction);
     } else {
-      addTransaction(transaction);
+      return addTransaction(transaction);
     }
   };
 
   return {
     transactions,
+    loading,
+    fetchTransactions,
     addTransaction,
     updateTransaction,
     deleteTransaction,
@@ -53,67 +103,109 @@ export function useTransactions() {
 /**
  * Hook for managing categories
  */
+/**
+ * Hook for managing categories.
+ */
 export function useCategories() {
   const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setCategories(storage.getCategories());
-  }, []);
+    const fetchCategories = async () => {
+      try {
+        const data = await api.getCategories();
+        setCategories(data);
+      } catch (error) {
+        console.error('Failed to fetch categories:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const saveCategories = (newCategories: Category[]) => {
-    setCategories(newCategories);
-    storage.saveCategories(newCategories);
-  };
+    fetchCategories();
+  }, []);
 
   return {
     categories,
-    setCategories: saveCategories,
+    loading,
+    setCategories,
   };
 }
 
 /**
  * Hook for managing budgets
  */
+/**
+ * Hook for managing budgets.
+ */
 export function useBudgets() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setBudgets(storage.getBudgets());
+  const fetchBudgets = useCallback(async (period?: string) => {
+    try {
+      setLoading(true);
+      const data = await api.getBudgets(period);
+      setBudgets(data);
+    } catch (error) {
+      console.error('Failed to fetch budgets:', error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const saveBudgets = (newBudgets: Budget[]) => {
-    setBudgets(newBudgets);
-    storage.saveBudgets(newBudgets);
+  useEffect(() => {
+    fetchBudgets();
+  }, [fetchBudgets]);
+
+  const addBudget = async (budget: Omit<Budget, 'id'>) => {
+    try {
+      const created = await api.createBudget(budget);
+      setBudgets(prev => [...prev, created]);
+      return created;
+    } catch (error) {
+      console.error('Failed to create budget:', error);
+      throw error;
+    }
   };
 
-  const addBudget = (budget: Budget) => {
-    const updated = [...budgets, budget];
-    saveBudgets(updated);
+  const updateBudget = async (budget: Budget) => {
+    try {
+      const updated = await api.updateBudget(budget);
+      setBudgets(prev =>
+        prev.map(b =>
+          b.categoryId === updated.categoryId && b.period === updated.period
+            ? updated
+            : b
+        )
+      );
+      return updated;
+    } catch (error) {
+      console.error('Failed to update budget:', error);
+      throw error;
+    }
   };
 
-  const updateBudget = (budget: Budget) => {
-    const updated = budgets.map(b => 
-      b.categoryId === budget.categoryId && b.period === budget.period ? budget : b
-    );
-    saveBudgets(updated);
-  };
-
-  const deleteBudget = (categoryId: string, period: string) => {
-    const updated = budgets.filter(
-      b => !(b.categoryId === categoryId && b.period === period)
-    );
-    saveBudgets(updated);
+  const deleteBudget = async (id: string) => {
+    try {
+      await api.deleteBudget(id);
+      setBudgets(prev => prev.filter(b => (b as any).id !== id));
+    } catch (error) {
+      console.error('Failed to delete budget:', error);
+      throw error;
+    }
   };
 
   return {
     budgets,
-    setBudgets: saveBudgets,
+    loading,
+    fetchBudgets,
+    setBudgets,
     addBudget,
     updateBudget,
     deleteBudget,
   };
 }
-
 /**
  * Hook for managing dark mode
  */

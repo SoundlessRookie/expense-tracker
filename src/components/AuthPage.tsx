@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Eye, EyeOff, Check, ArrowRight, Lock, Mail, User } from 'lucide-react';
 import { BlobMascot } from './Logo';
+import * as api from '../utils/api';
 
 interface AuthPageProps {
   onAuthSuccess: (user: { name: string; email: string }) => void;
@@ -48,24 +49,28 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
         setError('Passwords do not match');
         return;
       }
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters');
+      if (password.length < 8) {
+        setError('Password must be at least 8 characters');
         return;
       }
     }
 
     setIsLoading(true);
 
-    // Simulate auth (replace with real auth logic)
-    await new Promise(r => setTimeout(r, 1200));
-
-    // Save user to localStorage
-    const user = { name: name || email.split('@')[0], email };
-    localStorage.setItem('wally_user', JSON.stringify(user));
-
+  try {
+    let response;
+    if (mode === 'signup') {
+      response = await api.register(email, email, password, name);
+    } else {
+      response = await api.login(email, password);
+    }
+    onAuthSuccess(response.user);
+  } catch (err) {
+    setError(err instanceof Error ? err.message : 'Something went wrong');
+  } finally {
     setIsLoading(false);
-    onAuthSuccess(user);
-  };
+  }
+}; 
 
   const switchMode = (newMode: AuthMode) => {
     setError('');

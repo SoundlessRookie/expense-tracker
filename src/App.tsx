@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Budget } from './types';
-import { storage } from './utils/storage';
 import { useTransactions, useCategories, useBudgets, useDarkMode } from './hooks';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
@@ -12,7 +11,7 @@ import { BudgetManager } from './components/BudgetManager';
 import { Settings } from './components/Settings';
 import { TransactionModal } from './components/TransactionModal';
 import { AuthPage } from './components/AuthPage';
-
+import * as api from './utils/api';
 interface User {
   name: string;
   email: string;
@@ -25,25 +24,33 @@ export default function App() {
 
   // Check for existing session on mount
   useEffect(() => {
-    const saved = localStorage.getItem('wally_user');
-    if (saved) {
-      try {
-        setUser(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem('wally_user');
-      }
+  const checkAuth = async () => {
+    if (!api.has_token()) {
+      setAuthChecked(true);
+      return;
     }
+
+    try {
+      const response = await api.getMe();
+      setUser(response.user);
+    } catch {
+      api.removeToken();
+    }
+
     setAuthChecked(true);
-  }, []);
+  };
+
+  checkAuth();
+}, []);
 
   const handleAuthSuccess = (loggedInUser: User) => {
     setUser(loggedInUser);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('wally_user');
+  const handleLogout = async () => {
+    await api.logout();
     setUser(null);
-  };
+};
 
   // Don't render until we've checked auth
   if (!authChecked) return null;
@@ -120,72 +127,70 @@ function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
   }, [filteredTransactions, categories]);
 
   // Handlers
-  const handleSaveTransaction = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    
-    const amount = Number(formData.get('amount'));
-    if (isNaN(amount) || amount <= 0) {
-      alert('Please enter a valid amount');
-      return;
+  const handleSaveTransaction = async (e: React.FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
+  const formData = new FormData(e.currentTarget);
+
+  const amount = Number(formData.get('amount'));
+  if (isNaN(amount) || amount <= 0) {
+    alert('Please enter a valid amount');
+    return;
+  }
+
+  const transactionData = {
+    amount,
+    type: formData.get('type') as TransactionType,
+    categoryId: formData.get('categoryId') as string,
+    date: formData.get('date') as string,
+    note: (formData.get('note') as string) || '',
+  };
+
+  try {
+    if (editingTransaction) {
+      await saveTransaction({ ...transactionData, id: editingTransaction.id }, true);
+    } else {
+      await saveTransaction(transactionData, false);
     }
-
-    const newTransaction: Transaction = {
-      id: editingTransaction?.id || crypto.randomUUID(),
-      amount,
-      type: formData.get('type') as TransactionType,
-      categoryId: formData.get('categoryId') as string,
-      date: formData.get('date') as string,
-      note: formData.get('note') as string || '',
-    };
-
-    saveTransaction(newTransaction, !!editingTransaction);
     setIsModalOpen(false);
     setEditingTransaction(null);
+  } catch {
+    alert('Failed to save transaction. Please try again.');
+  }
+};
 
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Transaction Saved', {
-        body: `${newTransaction.type === 'income' ? '+' : '-'}$${newTransaction.amount} recorded.`,
-      });
-    }
-  };
+  const handleSaveBudget = async (categoryId: string, amount: number) => {
+  const currentMonthStr = format(currentMonth, 'yyyy-MM');
 
-  const handleSaveBudget = (categoryId: string, amount: number) => {
-    const currentMonthStr = format(currentMonth, 'yyyy-MM');
-    
-    const existingBudget = budgets.find(
-      b => b.categoryId === categoryId && b.period === currentMonthStr
-    );
+  const existingBudget = budgets.find(
+    b => b.categoryId === categoryId && b.period === currentMonthStr
+  );
 
+  try {
     if (existingBudget) {
-      updateBudget({ ...existingBudget, amount });
+      await updateBudget({ ...existingBudget, amount });
     } else {
-      addBudget({ categoryId, amount, period: currentMonthStr });
+      await addBudget({ categoryId, amount, period: currentMonthStr });
     }
+  } catch {
+    alert('Failed to save budget. Please try again.');
+  }
+};
 
-    if ('Notification' in window && Notification.permission === 'granted') {
-      const categoryName = categories.find(c => c.id === categoryId)?.name || 'Category';
-      new Notification('Budget Saved', {
-        body: `Budget set to $${amount} for ${categoryName}`,
-      });
-    }
-  };
+  // const handleExport = () => {
+  //   storage.exportData();
+  // };
 
-  const handleExport = () => {
-    storage.exportData();
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && (await storage.importData(file))) {
-      setTransactions(storage.getTransactions());
-      setCategories(storage.getCategories());
-      setBudgets(storage.getBudgets());
-      alert('Data restored successfully!');
-    } else {
-      alert('Failed to import data. Please check the file format.');
-    }
-  };
+  // const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = e.target.files?.[0];
+  //   if (file && (await storage.importData(file))) {
+  //     setTransactions(storage.getTransactions());
+  //     setCategories(storage.getCategories());
+  //     setBudgets(storage.getBudgets());
+  //     alert('Data restored successfully!');
+  //   } else {
+  //     alert('Failed to import data. Please check the file format.');
+  //   }
+  // };
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window) {
@@ -266,8 +271,8 @@ function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
               <Settings
                 isDarkMode={isDarkMode}
                 onToggleDarkMode={toggleDarkMode}
-                onExport={handleExport}
-                onImport={handleImport}
+                onExport={() => alert('Export not available yet')}
+                onImport={() => {}}
                 onRequestNotification={requestNotificationPermission}
               />
             )}
@@ -280,6 +285,7 @@ function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
         isOpen={isModalOpen}
         editingTransaction={editingTransaction}
         categories={categories}
+        currentMonth={currentMonth}
         onClose={() => {
           setIsModalOpen(false);
           setEditingTransaction(null);

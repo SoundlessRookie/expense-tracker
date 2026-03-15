@@ -8,6 +8,7 @@ interface TransactionModalProps {
   isOpen: boolean;
   editingTransaction: Transaction | null;
   categories: Category[];
+  currentMonth: Date;
   onClose: () => void;
   onSave: (e: React.FormEvent<HTMLFormElement>) => void;
 }
@@ -16,6 +17,7 @@ export function TransactionModal({
   isOpen,
   editingTransaction,
   categories,
+  currentMonth,
   onClose,
   onSave,
 }: TransactionModalProps) {
@@ -130,7 +132,7 @@ export function TransactionModal({
                   type="date"
                   name="date"
                   required
-                  defaultValue={editingTransaction?.date || format(new Date(), 'yyyy-MM-dd')}
+                  defaultValue={editingTransaction?.date || format(currentMonth, 'yyyy-MM-dd')}
                   className="w-full px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none"
                 />
               </div>
