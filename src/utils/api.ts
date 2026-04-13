@@ -1,6 +1,8 @@
 import { em, head } from "motion/react-client";
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
+const API_BASE_URL = import.meta.env.PROD
+  ? 'https://abc123.execute-api.us-east-1.amazonaws.com/api'
+  : 'http://127.0.0.1:8000/api';
 
 function getToken(): string | null {
     return localStorage.getItem('auth_token');
