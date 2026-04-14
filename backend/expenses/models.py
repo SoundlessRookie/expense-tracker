@@ -73,7 +73,7 @@ class Transaction(models.Model):
     
     def __str__(self):
         sign = '+' if self.type == 'income' else '-'
-        return f'{sign}${self.amout} on {self.date}'
+        return f'{sign}${self.amount} on {self.date}'
     
 class Budget(models.Model):
     id = models.UUIDField(
