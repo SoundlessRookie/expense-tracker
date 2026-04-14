@@ -1,7 +1,7 @@
 import { em, head } from "motion/react-client";
 
 const API_BASE_URL = import.meta.env.PROD
-  ? 'https://abc123.execute-api.us-east-1.amazonaws.com/api'
+  ? 'https://mama4q8eoe.execute-api.us-east-1.amazonaws.com/api'
   : 'http://127.0.0.1:8000/api';
 
 function getToken(): string | null {
@@ -93,7 +93,7 @@ export async function login(
 
 export async function logout(): Promise<void> {
     try {
-        await apiFetch('/auth/login', {
+        await apiFetch('/auth/logout/', {
             method: 'POST'
         })
     } catch {
@@ -152,7 +152,7 @@ export async function getTransactions(
     const params = new URLSearchParams();
     if (filters.month) params.append('month', filters.month);
     if (filters.type && filters.type !== 'all') params.append('type', filters.type);
-    if (filters.search) params.append('serach', filters.search);
+    if (filters.search) params.append('search', filters.search);
 
     const queryString = params.toString();
     const endpoint = `/transactions/${queryString ? `?${queryString}` : ''}`;
