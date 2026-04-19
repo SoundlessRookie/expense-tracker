@@ -12,6 +12,7 @@ import { Settings } from './components/Settings';
 import { TransactionModal } from './components/TransactionModal';
 import { AuthPage } from './components/AuthPage';
 import * as api from './utils/api';
+import { ReceiptUpload } from './components/ReceiptUpload';
 interface User {
   name: string;
   email: string;
@@ -67,7 +68,7 @@ export default function App() {
 function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
   // State
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'receipts' | 'settings'>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -266,6 +267,9 @@ function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
                 currentMonth={currentMonth}
                 onSaveBudget={handleSaveBudget}
               />
+            )}
+            {activeTab === 'receipts' && (
+              <ReceiptUpload />
             )}
             {activeTab === 'settings' && (
               <Settings

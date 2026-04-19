@@ -1,12 +1,14 @@
 import React from 'react';
-import { LayoutDashboard, Filter, PieChart, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Filter, PieChart, Settings, LogOut, ReceiptText } from 'lucide-react';
 import { cn } from '../types';
 import { BlobLogo } from './Logo';
 import { motion } from 'motion/react';
 
+type AppTab = 'dashboard' | 'transactions' | 'budgets' | 'receipts' | 'settings';
+
 interface SidebarProps {
-  activeTab: 'dashboard' | 'transactions' | 'budgets' | 'settings';
-  onTabChange: (tab: 'dashboard' | 'transactions' | 'budgets' | 'settings') => void;
+  activeTab: AppTab;
+  onTabChange: (tab: AppTab) => void;
   user: { name: string; email: string };
   onLogout: () => void;
 }
@@ -15,6 +17,7 @@ const navigation = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { id: 'transactions', icon: Filter, label: 'Transactions' },
   { id: 'budgets', icon: PieChart, label: 'Budgets' },
+  { id: 'receipts', icon: ReceiptText, label: 'Receipts' },
   { id: 'settings', icon: Settings, label: 'Settings' },
 ] as const;
 
