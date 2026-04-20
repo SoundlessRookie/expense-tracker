@@ -9,9 +9,10 @@ import { Dashboard } from './components/Dashboard';
 import { TransactionList } from './components/TransactionList';
 import { BudgetManager } from './components/BudgetManager';
 import { Settings } from './components/Settings';
+import * as cognito from './utils/cognito';
 import { TransactionModal } from './components/TransactionModal';
 import { AuthPage } from './components/AuthPage';
-import * as api from './utils/api';
+
 import { ReceiptUpload } from './components/ReceiptUpload';
 interface User {
   name: string;
@@ -26,18 +27,14 @@ export default function App() {
   // Check for existing session on mount
   useEffect(() => {
   const checkAuth = async () => {
-    if (!api.has_token()) {
-      setAuthChecked(true);
-      return;
-    }
-
     try {
-      const response = await api.getMe();
-      setUser(response.user);
+      const userAttrs = await cognito.getUserAttributes();
+      if (userAttrs) {
+        setUser(userAttrs);
+      }
     } catch {
-      api.removeToken();
+      // Not logged in
     }
-
     setAuthChecked(true);
   };
 
@@ -48,9 +45,9 @@ export default function App() {
     setUser(loggedInUser);
   };
 
-  const handleLogout = async () => {
-    await api.logout();
-    setUser(null);
+  const handleLogout = () => {
+  cognito.signOut();
+  setUser(null);
 };
 
   // Don't render until we've checked auth

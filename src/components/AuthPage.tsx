@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eye, EyeOff, Check, ArrowRight, Lock, Mail, User } from 'lucide-react';
+import { Eye, EyeOff, Check, ArrowRight, Lock, Mail, User, KeyRound } from 'lucide-react';
 import { BlobMascot } from './Logo';
-import * as api from '../utils/api';
+import * as cognito from '../utils/cognito';
 
 interface AuthPageProps {
   onAuthSuccess: (user: { name: string; email: string }) => void;
 }
 
-type AuthMode = 'login' | 'signup';
+type AuthMode = 'login' | 'signup' | 'verify';
 
 export function AuthPage({ onAuthSuccess }: AuthPageProps) {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -21,6 +21,7 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
 
   // Password strength
   const passwordStrength = (() => {
@@ -57,25 +58,32 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
 
     setIsLoading(true);
 
-  try {
-    let response;
-    if (mode === 'signup') {
-      response = await api.register(email, email, password, name);
-    } else {
-      response = await api.login(email, password);
+    try {
+      if (mode === 'signup') {
+        await cognito.signUp(email, password, name);
+        setMode('verify');
+      } else if (mode === 'verify') {
+        await cognito.confirmSignUp(email, verificationCode);
+        await cognito.signIn(email, password);
+        const userAttrs = await cognito.getUserAttributes();
+        if (userAttrs) onAuthSuccess(userAttrs);
+      } else {
+        await cognito.signIn(email, password);
+        const userAttrs = await cognito.getUserAttributes();
+        if (userAttrs) onAuthSuccess(userAttrs);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setIsLoading(false);
     }
-    onAuthSuccess(response.user);
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Something went wrong');
-  } finally {
-    setIsLoading(false);
-  }
-}; 
+  };
 
   const switchMode = (newMode: AuthMode) => {
     setError('');
     setPassword('');
     setConfirmPassword('');
+    setVerificationCode('');
     setMode(newMode);
   };
 
@@ -114,31 +122,33 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
                   Wally
                 </h1>
                 <p className="text-sm text-zinc-500 mt-1">
-                  {mode === 'login' ? 'Welcome back! 👋' : 'Start tracking your finances ✨'}
+                  {mode === 'login' ? 'Welcome back! 👋' : mode === 'verify' ? 'Check your email 📧' : 'Start tracking your finances ✨'}
                 </p>
               </div>
             </div>
 
-            {/* Mode Toggle */}
-            <div className="flex mt-6 bg-white dark:bg-zinc-800 rounded-xl p-1 border border-zinc-100 dark:border-zinc-700">
-              {(['login', 'signup'] as AuthMode[]).map(m => (
-                <button
-                  key={m}
-                  onClick={() => switchMode(m)}
-                  className="relative flex-1 py-2 text-sm font-bold rounded-lg transition-colors capitalize"
-                  style={{ color: mode === m ? '#059669' : '' }}
-                >
-                  {mode === m && (
-                    <motion.div
-                      layoutId="tab-indicator"
-                      className="absolute inset-0 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-800"
-                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10">{m === 'login' ? 'Log In' : 'Sign Up'}</span>
-                </button>
-              ))}
-            </div>
+            {/* Mode Toggle - hide during verification */}
+            {mode !== 'verify' && (
+              <div className="flex mt-6 bg-white dark:bg-zinc-800 rounded-xl p-1 border border-zinc-100 dark:border-zinc-700">
+                {(['login', 'signup'] as AuthMode[]).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => switchMode(m)}
+                    className="relative flex-1 py-2 text-sm font-bold rounded-lg transition-colors capitalize"
+                    style={{ color: mode === m ? '#059669' : '' }}
+                  >
+                    {mode === m && (
+                      <motion.div
+                        layoutId="tab-indicator"
+                        className="absolute inset-0 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-800"
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                    <span className="relative z-10">{m === 'login' ? 'Log In' : 'Sign Up'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Form */}
@@ -153,130 +163,162 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
                 onSubmit={handleSubmit}
                 className="space-y-4"
               >
-                {/* Name (signup only) */}
-                {mode === 'signup' && (
+                {/* Verification Code (verify mode only) */}
+                {mode === 'verify' && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
                     className="space-y-1.5"
                   >
                     <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
-                      Full Name
+                      Verification Code
                     </label>
+                    <p className="text-sm text-zinc-500">
+                      We sent a 6-digit code to <strong>{email}</strong>
+                    </p>
                     <div className="relative">
-                      <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                      <KeyRound size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                       <input
                         type="text"
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        placeholder="Your name"
-                        required={mode === 'signup'}
-                        className="w-full pl-10 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                        value={verificationCode}
+                        onChange={e => setVerificationCode(e.target.value)}
+                        placeholder="Enter 6-digit code"
+                        required
+                        className="w-full pl-10 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all text-center text-lg tracking-widest"
                       />
                     </div>
                   </motion.div>
                 )}
 
-                {/* Email */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
-                    Email
-                  </label>
-                  <div className="relative">
-                    <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      required
-                      className="w-full pl-10 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-
-                {/* Password */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      required
-                      className="w-full pl-10 pr-12 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-
-                  {/* Password strength (signup only) */}
-                  {mode === 'signup' && password.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="space-y-1"
-                    >
-                      <div className="flex gap-1">
-                        {[1, 2, 3, 4].map(i => (
-                          <div
-                            key={i}
-                            className="h-1 flex-1 rounded-full transition-all duration-300"
-                            style={{
-                              backgroundColor: i <= passwordStrength ? strengthColor : '#e4e4e7'
-                            }}
+                {/* Name, Email, Password fields - hidden during verification */}
+                {mode !== 'verify' && (
+                  <>
+                    {/* Name (signup only) */}
+                    {mode === 'signup' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-1.5"
+                      >
+                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+                          Full Name
+                        </label>
+                        <div className="relative">
+                          <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                          <input
+                            type="text"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            placeholder="Your name"
+                            required={mode === 'signup'}
+                            className="w-full pl-10 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
                           />
-                        ))}
-                      </div>
-                      <p className="text-xs font-medium" style={{ color: strengthColor }}>
-                        {strengthLabel}
-                      </p>
-                    </motion.div>
-                  )}
-                </div>
+                        </div>
+                      </motion.div>
+                    )}
 
-                {/* Confirm Password (signup only) */}
-                {mode === 'signup' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="space-y-1.5"
-                  >
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
-                      Confirm Password
-                    </label>
-                    <div className="relative">
-                      <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)}
-                        placeholder="••••••••"
-                        required={mode === 'signup'}
-                        className="w-full pl-10 pr-12 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                      />
-                      {confirmPassword && password === confirmPassword && (
-                        <motion.div
-                          initial={{ scale: 0 }}
-                          animate={{ scale: 1 }}
-                          className="absolute right-3.5 top-1/2 -translate-y-1/2 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center"
+                    {/* Email */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+                        Email
+                      </label>
+                      <div className="relative">
+                        <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={e => setEmail(e.target.value)}
+                          placeholder="you@example.com"
+                          required
+                          className="w-full pl-10 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Password */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+                        Password
+                      </label>
+                      <div className="relative">
+                        <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={e => setPassword(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          className="w-full pl-10 pr-12 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors"
                         >
-                          <Check size={12} className="text-white" />
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+
+                      {/* Password strength (signup only) */}
+                      {mode === 'signup' && password.length > 0 && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="space-y-1"
+                        >
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4].map(i => (
+                              <div
+                                key={i}
+                                className="h-1 flex-1 rounded-full transition-all duration-300"
+                                style={{
+                                  backgroundColor: i <= passwordStrength ? strengthColor : '#e4e4e7'
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-xs font-medium" style={{ color: strengthColor }}>
+                            {strengthLabel}
+                          </p>
                         </motion.div>
                       )}
                     </div>
-                  </motion.div>
+
+                    {/* Confirm Password (signup only) */}
+                    {mode === 'signup' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="space-y-1.5"
+                      >
+                        <label className="text-xs font-bold text-zinc-500 uppercase tracking-wide">
+                          Confirm Password
+                        </label>
+                        <div className="relative">
+                          <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            value={confirmPassword}
+                            onChange={e => setConfirmPassword(e.target.value)}
+                            placeholder="••••••••"
+                            required={mode === 'signup'}
+                            className="w-full pl-10 pr-12 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                          />
+                          {confirmPassword && password === confirmPassword && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              className="absolute right-3.5 top-1/2 -translate-y-1/2 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center"
+                            >
+                              <Check size={12} className="text-white" />
+                            </motion.div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </>
                 )}
 
                 {/* Error message */}
@@ -316,59 +358,77 @@ export function AuthPage({ onAuthSuccess }: AuthPageProps) {
                         transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                         className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
                       />
-                      {mode === 'login' ? 'Logging in...' : 'Creating account...'}
+                      {mode === 'login' ? 'Logging in...' : mode === 'verify' ? 'Verifying...' : 'Creating account...'}
                     </>
                   ) : (
                     <>
-                      {mode === 'login' ? 'Log In' : 'Create Account'}
+                      {mode === 'login' ? 'Log In' : mode === 'verify' ? 'Verify Email' : 'Create Account'}
                       <ArrowRight size={16} />
                     </>
                   )}
                 </motion.button>
 
-                {/* Divider */}
-                <div className="flex items-center gap-3 my-2">
-                  <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
-                  <span className="text-xs text-zinc-400 font-medium">or continue with</span>
-                  <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
-                </div>
+                {/* Divider - hide during verification */}
+                {mode !== 'verify' && (
+                  <>
+                    <div className="flex items-center gap-3 my-2">
+                      <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+                      <span className="text-xs text-zinc-400 font-medium">or continue with</span>
+                      <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+                    </div>
 
-                {/* Social login */}
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    className="flex items-center justify-center gap-2 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm font-medium"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
-                    Google
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center justify-center gap-2 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm font-medium"
-                  >
-                    <svg width="19" height="19" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="fill-zinc-900 dark:fill-white">
-                      <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.39.07 2.35.74 3.17.78 1.21-.24 2.37-.93 3.67-.84 1.56.13 2.73.72 3.5 1.84-3.21 1.92-2.59 5.76.42 7.06-.61 1.43-1.37 2.83-2.76 4.04zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-                    </svg>
-                    Apple
-                  </button>
-                </div>
+                    {/* Social login */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        className="flex items-center justify-center gap-2 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm font-medium"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                        </svg>
+                        Google
+                      </button>
+                      <button
+                        type="button"
+                        className="flex items-center justify-center gap-2 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm font-medium"
+                      >
+                        <svg width="19" height="19" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="fill-zinc-900 dark:fill-white">
+                          <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.7 9.05 7.4c1.39.07 2.35.74 3.17.78 1.21-.24 2.37-.93 3.67-.84 1.56.13 2.73.72 3.5 1.84-3.21 1.92-2.59 5.76.42 7.06-.61 1.43-1.37 2.83-2.76 4.04zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                        </svg>
+                        Apple
+                      </button>
+                    </div>
 
-                {/* Switch mode */}
-                <p className="text-center text-sm text-zinc-500 pt-2">
-                  {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-                  <button
-                    type="button"
-                    onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}
-                    className="font-bold text-emerald-600 hover:underline"
-                  >
-                    {mode === 'login' ? 'Sign up' : 'Log in'}
-                  </button>
-                </p>
+                    {/* Switch mode */}
+                    <p className="text-center text-sm text-zinc-500 pt-2">
+                      {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+                      <button
+                        type="button"
+                        onClick={() => switchMode(mode === 'login' ? 'signup' : 'login')}
+                        className="font-bold text-emerald-600 hover:underline"
+                      >
+                        {mode === 'login' ? 'Sign up' : 'Log in'}
+                      </button>
+                    </p>
+                  </>
+                )}
+
+                {/* Back to login - verify mode only */}
+                {mode === 'verify' && (
+                  <p className="text-center text-sm text-zinc-500 pt-2">
+                    Didn't receive a code?{' '}
+                    <button
+                      type="button"
+                      onClick={() => switchMode('signup')}
+                      className="font-bold text-emerald-600 hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </p>
+                )}
               </motion.form>
             </AnimatePresence>
           </div>
