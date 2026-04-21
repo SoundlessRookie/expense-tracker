@@ -8,7 +8,7 @@ import {
 
 const userPool = new CognitoUserPool({
   UserPoolId: 'us-east-1_3tvlBXFpe',
-  ClientId: '5hu8prib7bi86oi56ai15v9fu',
+  ClientId: '5hu8prib7bi86oi56ail5v9fu',
 });
 
 export function signUp(
