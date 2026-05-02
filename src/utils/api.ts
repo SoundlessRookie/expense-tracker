@@ -153,3 +153,31 @@ function parseTransaction(data: any): Transaction {
 function parseBudget(data: any): Budget {
   return { ...data, amount: Number(data.amount) };
 }
+
+export async function exportData(): Promise<string> {
+  const token = await getIdToken();
+  if (!token) throw new Error('Not authenticated');
+
+  // Decode the JWT to get the email (it's in the payload)
+  const payload = JSON.parse(atob(token.split('.')[1]));
+  const email = payload.email;
+
+  const response = await fetch(
+    `${API_BASE_URL.replace('/api', '')}/export`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Export failed');
+  }
+
+  // Parse the body (Lambda returns a stringified JSON body)
+  const body = typeof data.body === 'string' ? JSON.parse(data.body) : data;
+  return body.download_url;
+}
