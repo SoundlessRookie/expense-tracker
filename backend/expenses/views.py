@@ -1,4 +1,6 @@
 from django.shortcuts import render
+import boto3
+import json
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -104,6 +106,25 @@ def me(request):
             'email': request.user.email,
         }
     })
+
+@api_view(['POST'])
+def export_data(request):
+    """
+    POST /api/export/
+    Invokes the data export Lambda and returns the download URL.
+    """
+    lambda_client = boto3.client('lambda', region_name='us-east-1')
+
+    response = lambda_client.invoke(
+        FunctionName='expense-tracker-data-export',
+        InvocationType='RequestResponse',
+        Payload=json.dumps({'email': request.user.email}),
+    )
+
+    result = json.loads(response['Payload'].read())
+    body = json.loads(result.get('body', '{}'))
+
+    return Response(body)
 
 
 # CRUD ViewSets
