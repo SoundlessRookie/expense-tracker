@@ -12,6 +12,7 @@ import { Settings } from './components/Settings';
 import * as cognito from './utils/cognito';
 import { TransactionModal } from './components/TransactionModal';
 import { AuthPage } from './components/AuthPage';
+import { exportData } from './utils/api';
 
 import { ReceiptUpload } from './components/ReceiptUpload';
 interface User {
@@ -272,7 +273,14 @@ function AppContent({ user, onLogout }: { user: User; onLogout: () => void }) {
               <Settings
                 isDarkMode={isDarkMode}
                 onToggleDarkMode={toggleDarkMode}
-                onExport={() => alert('Export not available yet')}
+                onExport={async () => {
+                  try {
+                    const url = await exportData();
+                    window.open(url, '_blank');
+                  } catch (err) {
+                    alert('Failed to export data. Please try again.');
+                  }
+                }}
                 onImport={() => {}}
                 onRequestNotification={requestNotificationPermission}
               />
