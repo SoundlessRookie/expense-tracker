@@ -1,121 +1,70 @@
-import React, { useState } from 'react';
-import { Upload, FileImage, Loader2, ReceiptText, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { motion } from 'motion/react';
-
-type ReceiptResult = {
-  id?: number;
-  merchant?: string | null;
-  transaction_date?: string | null;
-  total_amount?: string | number | null;
-  raw_text?: string;
-  message?: string;
-};
+import React, { useState, useRef } from 'react';
+import { Upload, Camera, Check, Loader2 } from 'lucide-react';
+import { uploadReceipt } from '../utils/api';
 
 export function ReceiptUpload() {
-  const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<ReceiptResult | null>(null);
-  const [error, setError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpload = async () => {
-    if (!file) {
-      setError('Please choose a receipt image first.');
-      return;
-    }
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    setError('');
-    setResult(null);
     setIsUploading(true);
+    setStatus('uploading');
+    setMessage('Uploading receipt...');
 
     try {
-      const token = localStorage.getItem('token');
-
-      const formData = new FormData();
-      formData.append('receipt', file);
-
-      const response = await fetch('http://127.0.0.1:8000/api/receipts/upload/', {
-        method: 'POST',
-        headers: {
-          Authorization: `Token ${token}`,
-        },
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || data.detail || 'Failed to upload receipt.');
-      }
-
-      setResult(data);
+      await uploadReceipt(file);
+      setStatus('success');
+      setMessage(
+        'Receipt uploaded! It will be processed shortly. ' +
+        'Check your transactions in a few seconds.'
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
+      setStatus('error');
+      setMessage(
+        err instanceof Error ? err.message : 'Failed to upload receipt'
+      );
     } finally {
       setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="card"
-      >
-        <div className="flex items-start gap-4">
-          <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30">
-            <ReceiptText size={28} />
+    <div className="space-y-6">
+      <div className="card p-8 text-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center">
+            <Camera size={32} className="text-emerald-600" />
           </div>
 
           <div>
-            <h3 className="text-xl font-bold">Upload Receipt</h3>
+            <h3 className="text-lg font-bold">Upload a Receipt</h3>
             <p className="text-sm text-zinc-500 mt-1">
-              Upload a receipt image. Wally will try to extract the merchant, date, and total amount.
+              Take a photo or select an image of your receipt.
+              We'll automatically extract the details and create a transaction.
             </p>
           </div>
-        </div>
 
-        <div className="mt-6 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 text-center bg-zinc-50/60 dark:bg-zinc-900/50">
-          <div className="flex flex-col items-center gap-4">
-            <div className="p-4 rounded-2xl bg-white dark:bg-zinc-800 shadow-sm">
-              <FileImage size={36} className="text-zinc-500" />
-            </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
 
-            <div>
-              <p className="font-bold">Choose a receipt image</p>
-              <p className="text-sm text-zinc-500 mt-1">
-                JPG, PNG, or other image files work best.
-              </p>
-            </div>
-
-            <label className="btn-secondary cursor-pointer inline-flex items-center gap-2">
-              <Upload size={18} />
-              Select File
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] || null);
-                  setError('');
-                  setResult(null);
-                }}
-              />
-            </label>
-
-            {file && (
-              <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                Selected: <span className="font-semibold">{file.name}</span>
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-6 flex justify-end">
           <button
-            onClick={handleUpload}
+            onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-            className="btn-primary flex items-center gap-2 disabled:opacity-60"
+            className="btn-primary flex items-center gap-2 px-6 py-3"
           >
             {isUploading ? (
               <>
@@ -125,60 +74,37 @@ export function ReceiptUpload() {
             ) : (
               <>
                 <Upload size={18} />
-                Upload and Extract
+                Select Receipt Image
               </>
             )}
           </button>
+
+          {status !== 'idle' && (
+            <div
+              className={`p-4 rounded-xl text-sm w-full max-w-md ${
+                status === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                  : status === 'error'
+                  ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-400'
+                  : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400'
+              }`}
+            >
+              {status === 'success' && <Check size={16} className="inline mr-2" />}
+              {message}
+            </div>
+          )}
         </div>
-      </motion.div>
+      </div>
 
-      {error && (
-        <div className="card border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20">
-          <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
-            <AlertCircle size={22} />
-            <p className="font-semibold">{error}</p>
-          </div>
+      <div className="card p-6">
+        <h4 className="font-bold mb-3">How it works</h4>
+        <div className="space-y-2 text-sm text-zinc-500">
+          <p>1. Upload a photo of your receipt</p>
+          <p>2. Amazon Textract reads the text from the image</p>
+          <p>3. AI identifies the merchant, amount, date, and category</p>
+          <p>4. A transaction is automatically created in your account</p>
         </div>
-      )}
-
-      {result && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card space-y-5"
-        >
-          <div className="flex items-center gap-3 text-emerald-600">
-            <CheckCircle2 size={24} />
-            <h3 className="text-lg font-bold">Extracted Receipt Information</h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800">
-              <p className="text-xs font-bold text-zinc-500 uppercase">Merchant</p>
-              <p className="font-semibold mt-1">{result.merchant || 'Not found'}</p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800">
-              <p className="text-xs font-bold text-zinc-500 uppercase">Date</p>
-              <p className="font-semibold mt-1">{result.transaction_date || 'Not found'}</p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800">
-              <p className="text-xs font-bold text-zinc-500 uppercase">Total</p>
-              <p className="font-semibold mt-1">
-                {result.total_amount ? `$${result.total_amount}` : 'Not found'}
-              </p>
-            </div>
-          </div>
-
-          <details className="rounded-2xl bg-zinc-50 dark:bg-zinc-800 p-4">
-            <summary className="cursor-pointer font-bold">Show raw OCR text</summary>
-            <pre className="mt-4 whitespace-pre-wrap text-xs text-zinc-600 dark:text-zinc-300">
-              {result.raw_text || 'No text extracted.'}
-            </pre>
-          </details>
-        </motion.div>
-      )}
+      </div>
     </div>
   );
 }

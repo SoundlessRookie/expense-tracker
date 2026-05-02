@@ -126,6 +126,32 @@ def export_data(request):
 
     return Response(body)
 
+@api_view(['POST'])
+def get_upload_url(request):
+    s3_client = boto3.client('s3', region_name='us-east-1')
+
+    # Build the S3 key using the user's email
+    email = request.user.email
+    safe_email = email.replace('@', '_at_').replace('.', '_dot_')
+    filename = request.data.get('filename', 'receipt.jpg')
+    key = f"receipts/{safe_email}/{filename}"
+
+    # Generate pre-signed upload URL (expires in 5 minutes)
+    upload_url = s3_client.generate_presigned_url(
+        'put_object',
+        Params={
+            'Bucket': 'YOUR_S3_BUCKET_NAME',
+            'Key': key,
+            'ContentType': 'image/jpeg',
+        },
+        ExpiresIn=300,
+    )
+
+    return Response({
+        'upload_url': upload_url,
+        'key': key,
+    })
+
 
 # CRUD ViewSets
 class CategoryViewSet(viewsets.ModelViewSet):

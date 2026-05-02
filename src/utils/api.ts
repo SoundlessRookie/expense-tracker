@@ -158,3 +158,37 @@ export async function exportData(): Promise<string> {
   const data = await apiFetch('/export/', { method: 'POST' });
   return data.download_url;
 }
+
+/**
+ * Get a pre-signed URL for uploading a receipt to S3.
+ */
+export async function getReceiptUploadUrl(
+  filename: string
+): Promise<{ upload_url: string; key: string }> {
+  return apiFetch('/receipts/upload-url/', {
+    method: 'POST',
+    body: JSON.stringify({ filename }),
+  });
+}
+
+/**
+ * Upload a receipt image. Gets a pre-signed URL then uploads directly to S3.
+ * The S3 upload triggers the Lambda receipt processor automatically.
+ */
+export async function uploadReceipt(file: File): Promise<void> {
+  // Step 1: Get pre-signed URL from Django
+  const { upload_url } = await getReceiptUploadUrl(file.name);
+
+  // Step 2: Upload directly to S3
+  const response = await fetch(upload_url, {
+    method: 'PUT',
+    body: file,
+    headers: {
+      'Content-Type': 'image/jpeg',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to upload receipt');
+  }
+}
