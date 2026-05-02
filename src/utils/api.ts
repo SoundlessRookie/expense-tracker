@@ -159,36 +159,26 @@ export async function exportData(): Promise<string> {
   return data.download_url;
 }
 
-/**
- * Get a pre-signed URL for uploading a receipt to S3.
- */
-export async function getReceiptUploadUrl(
-  filename: string
-): Promise<{ upload_url: string; key: string }> {
-  return apiFetch('/receipts/upload-url/', {
+export async function uploadReceipt(file: File): Promise<any> {
+  const { getIdToken } = await import('./cognito');
+  const token = await getIdToken();
+
+  const formData = new FormData();
+  formData.append('receipt', file);
+
+  const response = await fetch(`${API_BASE_URL}/receipts/upload/`, {
     method: 'POST',
-    body: JSON.stringify({ filename }),
-  });
-}
-
-/**
- * Upload a receipt image. Gets a pre-signed URL then uploads directly to S3.
- * The S3 upload triggers the Lambda receipt processor automatically.
- */
-export async function uploadReceipt(file: File): Promise<void> {
-  // Step 1: Get pre-signed URL from Django
-  const { upload_url } = await getReceiptUploadUrl(file.name);
-
-  // Step 2: Upload directly to S3
-  const response = await fetch(upload_url, {
-    method: 'PUT',
-    body: file,
     headers: {
-      'Content-Type': 'image/jpeg',
+      Authorization: `Bearer ${token}`,
     },
+    body: formData,
   });
+
+  const data = await response.json();
 
   if (!response.ok) {
-    throw new Error('Failed to upload receipt');
+    throw new Error(data.error || data.detail || 'Failed to upload receipt');
   }
+
+  return data;
 }

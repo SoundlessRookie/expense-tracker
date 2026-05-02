@@ -127,31 +127,59 @@ def export_data(request):
     return Response(body)
 
 @api_view(['POST'])
-def get_upload_url(request):
-    s3_client = boto3.client('s3', region_name='us-east-1')
+def upload_receipt(request):
+    """
+    POST /api/receipts/upload/
+    Receives a receipt image, uploads to S3, invokes the receipt
+    processor Lambda, and returns the extracted data.
+    """
+    receipt_file = request.FILES.get('receipt')
+    if not receipt_file:
+        return Response({'error': 'No receipt file provided'}, status=400)
 
-    # Build the S3 key using the user's email
+    s3_client = boto3.client('s3', region_name='us-east-1')
+    lambda_client = boto3.client('lambda', region_name='us-east-1')
+
     email = request.user.email
     safe_email = email.replace('@', '_at_').replace('.', '_dot_')
-    filename = request.data.get('filename', 'receipt.jpg')
-    key = f"receipts/{safe_email}/{filename}"
+    key = f"receipts/{safe_email}/{receipt_file.name}"
+    bucket = 'expense-tracker-receipts-1'
 
-    # Generate pre-signed upload URL (expires in 5 minutes)
-    upload_url = s3_client.generate_presigned_url(
-        'put_object',
-        Params={
-            'Bucket': 'YOUR_S3_BUCKET_NAME',
-            'Key': key,
-            'ContentType': 'image/jpeg',
-        },
-        ExpiresIn=300,
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=receipt_file.read(),
+        ContentType=receipt_file.content_type,
     )
 
-    return Response({
-        'upload_url': upload_url,
-        'key': key,
-    })
+    payload = {
+        'Records': [{
+            's3': {
+                'bucket': {'name': bucket},
+                'object': {'key': key},
+            }
+        }]
+    }
 
+    response = lambda_client.invoke(
+        FunctionName='expense-tracker-receipt-processor',
+        InvocationType='RequestResponse',
+        Payload=json.dumps(payload),
+    )
+
+    result = json.loads(response['Payload'].read())
+    body = json.loads(result.get('body', '{}'))
+
+    if result.get('statusCode') != 200:
+        return Response({'error': body.get('error', 'Processing failed')}, status=400)
+
+    return Response({
+        'merchant': body.get('merchant'),
+        'transaction_date': body.get('date'),
+        'total_amount': body.get('amount'),
+        'category': body.get('category'),
+        'message': 'Receipt processed successfully',
+    })
 
 # CRUD ViewSets
 class CategoryViewSet(viewsets.ModelViewSet):
