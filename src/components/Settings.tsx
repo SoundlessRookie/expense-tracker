@@ -98,7 +98,7 @@ export function Settings({
             <Download size={20} className="text-emerald-600" />
             <div className="text-left">
               <p className="font-bold text-sm">Backup Data</p>
-              <p className="text-xs text-zinc-500">Export to JSON file</p>
+              <p className="text-xs text-zinc-500">Export to CSV file</p>
             </div>
           </button>
 
@@ -107,9 +107,9 @@ export function Settings({
             <Upload size={20} className="text-blue-600" />
             <div className="text-left">
               <p className="font-bold text-sm">Restore Data</p>
-              <p className="text-xs text-zinc-500">Import from JSON file</p>
+              <p className="text-xs text-zinc-500">Import from CSV file</p>
             </div>
-            <input type="file" accept=".json" onChange={onImport} className="hidden" />
+            <input type="file" accept=".csv" onChange={onImport} className="hidden" />
           </label>
         </div>
       </div>
